@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gudavino Menu</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            height: 100vh;
+            background-color: #f7f7f7;
+            overflow: hidden;
+        }
+
+        #pdf-container {
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            padding: 10px;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            margin-bottom: 10px; /* Space between pages */
+            width: 100% !important;
+            height: auto !important;
+        }
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            #pdf-container {
+                padding: 5px;
+                height: 100vh;
+                overflow-y: scroll; /* Ensures scrolling works */
+                -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            }
+
+            canvas {
+                width: 100% !important; /* Ensure canvas takes full width on mobile */
+                height: auto !important;
+            }
+        }
+
+        /* Web version */
+        @media (min-width: 769px) {
+            #pdf-container {
+                width: 80%;
+                max-width: 800px; /* Limit the width for web version */
+                margin: 0 auto;
+            }
+
+            canvas {
+                width: 100% !important; /* Ensure canvas takes full width on desktop but limits the size */
+                height: auto !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="pdf-container"></div>
+
+    <script src="./js/pdf.min.js"></script>
+    <script>
+        // 2. IMPORTANT: This line is required to tell the library where to find its worker script,
+        // which fixes the "pdfjsLib is not defined" error when loading locally.
+        // It assumes you also placed 'pdf.worker.min.js' in the 'js' folder.
+        pdfjsLib.GlobalWorkerOptions.workerSrc = './js/pdf.worker.min.js';
+
+        const url = 'Gudavino_menu_2024 - Copy.pdf'; // Path to your PDF file
+
+        const pdfContainer = document.getElementById('pdf-container');
+        let pdfDoc = null;
+        let currentPage = 1;
+        let totalPages = 0;
+        let isLoading = false; // Prevent multiple page loads simultaneously
+
+        // Load PDF using PDF.js
+        pdfjsLib.getDocument(url).promise.then(pdf => {
+            pdfDoc = pdf;
+            totalPages = pdf.numPages; // Get total pages
+
+            // Initial rendering: wait for the first page to render before attaching scroll listeners
+            renderPage(currentPage).then(() => {
+                // Event listener for scrolling on mobile
+                pdfContainer.addEventListener('touchend', onScroll); // Use touch event for mobile scrolling
+                pdfContainer.addEventListener('scroll', onScroll); // Scroll event for desktop
+            }).catch(error => {
+                console.error('Error rendering first page:', error);
+            });
+
+        }).catch(error => {
+            console.error('Error loading PDF:', error);
+        });
+
+        // Render a specific page
+        // 3. FIX: This function now returns the rendering Promise.
+        function renderPage(pageNum) {
+            if (pageNum < 1 || pageNum > totalPages) return Promise.resolve(); // Return resolved promise if page is out of bounds
+
+            return pdfDoc.getPage(pageNum).then(page => {
+                const scale = window.innerWidth < 768 ? 1.0 : 1.5; // Adjust scaling for mobile vs desktop
+                const viewport = page.getViewport({ scale });
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                pdfContainer.appendChild(canvas);
+
+                // Render page on the canvas and return the render promise
+                return page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise; // IMPORTANT: Return the promise from the render operation
+            });
+        }
+
+        // Check if the user has scrolled to the bottom of the container
+        function onScroll() {
+            const scrollTop = pdfContainer.scrollTop;
+            const scrollHeight = pdfContainer.scrollHeight;
+            const containerHeight = pdfContainer.clientHeight;
+
+            // If the user reaches the bottom of the container, load the next page
+            if (scrollTop + containerHeight >= scrollHeight - 10 && currentPage < totalPages && !isLoading) {
+                isLoading = true; // Set flag to prevent multiple loads
+                currentPage++;
+                
+                // 4. FIX: Wait for the renderPage promise to complete before clearing the flag
+                renderPage(currentPage).then(() => {
+                    isLoading = false; // Only clear the flag AFTER rendering is done
+                }).catch(error => {
+                    console.error('Error rendering page:', error);
+                    isLoading = false; // Clear flag even on error
+                });
+            }
+        }
+    </script>
+</body>
+</html>
